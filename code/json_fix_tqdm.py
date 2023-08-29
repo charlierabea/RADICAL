@@ -1,5 +1,5 @@
-file_path = '/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED.json'
-insert_position = 19617132299
+file_path = '/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED_eval.json'
+insert_position = 19619798029
 comma = '}'
 
 # Read the file contents
