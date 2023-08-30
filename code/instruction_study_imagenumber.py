@@ -1,7 +1,10 @@
+# this code see the number of images in each MED_INS in a mimicit.json
+# the input json should refer to convert_json.py
+# if there's some outlier INS, record it as rule_out set in convert_json.py, then execute again
 import json
 
 # Read the JSON from a file
-with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED_train.json', 'r') as file:
+with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED_instruction.json', 'r') as file:
     data = json.load(file)
 
 # Extract image_ids list lengths for each MED_INS and store them with the corresponding MED_INS key

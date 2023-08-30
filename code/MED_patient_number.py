@@ -1,9 +1,10 @@
+#This code is used to summarize the patient numbers in a dataset(after main.py)
 import json
 import re
 from tqdm import tqdm
 
 # Load the JSON file
-with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED_eval.json', 'r') as file:
+with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED.json', 'r') as file:
     data = json.load(file)
 
 # Extract all top-level keys from the JSON data

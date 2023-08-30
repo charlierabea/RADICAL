@@ -3,7 +3,7 @@ import re
 from tqdm import tqdm
 
 # Load the JSON file
-with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MEDresidual.json', 'r') as file:
+with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED.json', 'r') as file:
     data = json.load(file)
 
 # Extract all top-level keys from the JSON data
