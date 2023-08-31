@@ -5,6 +5,7 @@ import glob
 import os
 import random
 import time
+import pandas as pd
 
 import numpy as np
 import gc
@@ -826,5 +827,82 @@ def main():
     accelerator.wait_for_everyone()
 
 
+# 1. Create a new function for evaluation
+def evaluate(model, eval_loader, tokenizer, device_id, accelerator):
+    model.eval()
+    generated_captions = []
+
+    with torch.no_grad():
+        for batch in tqdm(eval_loader, desc="Evaluating"):
+            images = batch["net_input"]["patch_images"].to(device_id, non_blocking=True)
+            input_ids = batch["net_input"]["input_ids"].to(device_id, non_blocking=True)
+            attention_mask = batch["net_input"]["attention_masks"].to(device_id, non_blocking=True)
+
+            # Generate caption
+            outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=5)
+            generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            generated_captions.append(generated_text)
+
+    return generated_captions
+
+# 2. Load the eval.json and eval_instruction.json and preprocess them
+def prepare_eval_dataset(eval_path, eval_instruction_path, tokenizer, image_path):
+    # Load the eval datasets
+    with open(eval_path, 'r') as f:
+        eval_data = json.load(f)
+
+    with open(eval_instruction_path, 'r') as f:
+        eval_instruction_data = json.load(f)["data"]
+
+    # Convert them into a suitable format for DataLoader
+    dataset = []
+    for key, value in eval_instruction_data.items():
+        image_ids = value['image_ID']
+        images = [eval_data[image_id] for image_id in image_ids]
+        instruction = value['instruction']
+        encoded_input = tokenizer(instruction, return_tensors='pt', padding='max_length', truncation=True, max_length=512)
+        dataset.append({
+            'images': images,
+            'net_input': {
+                'input_ids': encoded_input['input_ids'],
+                'attention_mask': encoded_input['attention_mask']
+            }
+        })
+
+    # Convert the dataset into a DataLoader
+    eval_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
+    return eval_loader
+
+# 3. Execute the evaluate function using a pretrained model checkpoint
+def main_eval():
+    args = parse_args()
+    accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)
+    if accelerator.state.deepspeed_plugin is not None:
+        accelerator.state.deepspeed_plugin.deepspeed_config["train_micro_batch_size_per_gpu"] = args.batch_size
+
+    device_id = accelerator.device
+
+    if args.pretrained_model_name_or_path is not None:
+        accelerator.print(f"Loading pretrained model from {args.pretrained_model_name_or_path}")
+        device_map = {"": device_id} if accelerator.distributed_type == "MULTI_GPU" or accelerator.distributed_type == "DEEPSPEED" else "auto"
+        if "otter" in args.model_name.lower():
+            model = OtterForConditionalGeneration.from_pretrained(
+                args.pretrained_model_name_or_path,
+                device_map=device_map,
+                local_files_only=args.offline,
+            )
+            args.tokenizer = model.text_tokenizer
+            tokenizer = model.text_tokenizer
+            image_processor = CLIPImageProcessor()
+
+    eval_loader = prepare_eval_dataset(args.eval_path, args.eval_instruction_path, tokenizer, args.images_path)
+    # model = ...  # Load your model with the pretrained checkpoint
+    # model.to(device_id)
+    generated_captions = evaluate(model, eval_loader, tokenizer, device_id, accelerator)
+
+    # 4. Save the generated captions to an Excel file
+    df = pd.DataFrame(generated_captions, columns=["Generated Caption"])
+    df.to_excel("generated_captions.xlsx", index=False)
+
 if __name__ == "__main__":
-    main()
+    main_eval()
