@@ -3,8 +3,8 @@ export PYTHONPATH=.
 CUDA_VISIBLE_DEVICES=0,1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
 pipeline/train/instruction_following.py \
 --pretrained_model_name_or_path="/home/chengyili/project/CT-CLIP/Otter/checkpoints/OTTER-MPT7B-Init" \
---mimicit_path="/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/test_instruction.json" \
---images_path="/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/test.json" \
+--mimicit_path="/local2/chengyili/data/output/test_instruction.json" \
+--images_path="/local2/chengyili/data/output/output/test.json" \
 --customized_config="/home/chengyili/project/CT-CLIP/Otter/pipeline/train/config_biomedCLIP.json" \
 --batch_size=4 \
 --num_epochs=9 \
