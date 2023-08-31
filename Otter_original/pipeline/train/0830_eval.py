@@ -290,6 +290,19 @@ def parse_args():
         default="",
         help="Path to the past image-text dataset (including multi-run conversations). Should be in format /path/to/xx_instruction.json",
     )
+    
+    parser.add_argument(
+        "--eval_instruction_path",
+        type=str,
+        default="",
+        help="Path to the evaluation instruction file. Should be in format /path/to/eval_instruction.json",
+    )
+    parser.add_argument(
+        "--eval_path",
+        type=str,
+        default="",
+        help="Path to the evaluation file. Should be in format /path/to/eval.json",
+    )
     parser.add_argument(
         "--past_images_path",
         type=str,
@@ -341,6 +354,7 @@ def parse_args():
         default="",
         help="Path to the past in-context training config dataset. Should be in format /path/to/xx_train.json",
     )
+    
     parser.add_argument(
         "--mimicit_ic_path",
         type=str,

@@ -4,7 +4,7 @@ export PYTHONPATH=.
 
 CUDA_VISIBLE_DEVICES=0,1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
 pipeline/train/0830_eval.py \
---pretrained_model_name_or_path="/home/chengyili/project/CT-CLIP/Otter/checkpoints/OTTER-LLaMA7B_0828_CLIP/final_weights.pt" \
+--pretrained_model_name_or_path="/home/chengyili/project/CT-CLIP/Otter/checkpoints/OTTER-LLaMA7B-MED_CLIP/" \
 --eval_path="/local2/chengyili/data/output/eval.json" \
 --eval_instruction_path="/local2/chengyili/data/output/eval_instruction.json" \
 --batch_size=1 \
