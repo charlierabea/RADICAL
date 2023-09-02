@@ -4,14 +4,14 @@ import re
 from tqdm import tqdm
 
 # Load the JSON file
-with open('/home/chengyili/project/CT-CLIP/Otter/mimic-it/convert-it/output/MED.json', 'r') as file:
+with open('/local2/chengyili/data/output/eval.json', 'r') as file:
     data = json.load(file)
 
 # Extract all top-level keys from the JSON data
 keys = data.keys()
 
 # Define a regular expression pattern to match the required keys
-pattern = re.compile(r'^MED_IMG_A_(\d+)_.*$')
+pattern = re.compile(r'^eval_IMG_A_(\d+)_.*$')
 
 # Filter the keys that match the pattern and have a patient number between 1 and 10000
 # Extract only the A_xxxx portion and ensure no duplicates using set

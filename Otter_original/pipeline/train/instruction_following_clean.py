@@ -5,7 +5,6 @@ import glob
 import os
 import random
 import time
-import pandas as pd
 
 import numpy as np
 import gc
@@ -67,7 +66,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
     answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
     ens_token_id = tokenizer(tokenizer.eos_token, add_special_tokens=False)["input_ids"][-1]
 
-    model.eval()
+    model.train()
 
     # setup logging
     step_time_m = AverageMeter()  # time for one optimizer step (> 1 batch if using gradient accum)
@@ -75,8 +74,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
     end = time.time()
     dtype = accelerator.unwrap_model(model).dtype
     print(f"Using dtype {dtype}")
-    generated_captions = {}
-    
+
     # loop through dataloader
     for num_steps, (batch_mimicits) in tqdm(
         enumerate(zip(*mimicit_loaders)),
@@ -85,9 +83,11 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
         initial=(epoch * num_batches_per_epoch),
     ):
         data_time_m.update(time.time() - end)
+
         global_step = num_steps + epoch * num_batches_per_epoch
         #### MIMIC-IT FORWARD PASS ####
 
+        total_losses = []
         for batch_mimicit in batch_mimicits:
             images = batch_mimicit["net_input"]["patch_images"].to(device_id, non_blocking=True)
             input_ids = batch_mimicit["net_input"]["input_ids"].to(device_id, non_blocking=True)
@@ -129,59 +129,118 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
             labels[labels == answer_token_id] = -100
             labels[labels == media_token_id] = -100
 
-            with accelerator.autocast():              
-                def get_formatted_prompt(prompt: str) -> str:
-                    return f"<image>User: {prompt} GPT:<answer>"
-                lang_x = model.text_tokenizer(
-                    [
-                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is usually around 30 when it's the coronal section, or 60 when sagittal section is added. \n Please generate image caption based on imageYou would have to look at the images to see if there's the following conditions: \n\nbrain atrophy/meningioma/fracture/soft tissue swelling/hydrocephalus/low density patches/enlargement of the ventricular system/enlargement of the sulci/calcified plaques/midline shift/intracranial hepatoma/epidural hepatoma/subdural hepatoma/lacunar infarction/cortical infarction/subcortical infarction/herniation\tarteriosclerotic/encephalopathy/encephalomalacia/wall calcification of cavernous ICA\n\n"),
-                    ],
-                    return_tensors="pt",
-                )
-                
-                lang_x_input_ids = lang_x["input_ids"].to(images.device)
-                lang_x_attention_mask = lang_x["attention_mask"].to(images.device)
-                # print(batch_mimicit)
-                # print(batch_mimicit["id"])
-                generated_text = model.generate(
-                    vision_x=images.to(dtype),
-                    lang_x=lang_x_input_ids,
-                    attention_mask=lang_x_attention_mask,
-                    max_new_tokens = 256,
-                ) 
-                # print(generated_text)
-                
-                parsed_output = (
-                    model.text_tokenizer.decode(generated_text[0])
-                    .split("<answer>")[-1]
-                    .lstrip()
-                    .rstrip()
-                    .split("<|endofchunk|>")[0]
-                    .lstrip()
-                    .rstrip()
-                    .lstrip('"')
-                    .rstrip('"')
-                )
-                gt = (
-                    model.text_tokenizer.decode(input_ids[0])
-                    .split("<answer>")[-1]
-                    .lstrip()
-                    .rstrip()
-                    .split("<|endofchunk|>")[0]
-                    .lstrip()
-                    .rstrip()
-                    .lstrip('"')
-                    .rstrip('"')
-                )
-                # print(batch_mimicit.keys())
-                # print(gt)
-                generated_captions[batch_mimicit["id"][0]] = (gt, parsed_output)
-                # print(generated_captions.keys())
+            with accelerator.autocast():
+                unwrapped_model = accelerator.unwrap_model(model)
 
-    # print(generated_captions)
-    df_data = [(key, val[0], val[1]) for key, val in generated_captions.items()]
-    df = pd.DataFrame(df_data, columns=['id', 'gt', 'parsed_output'])
-    df.to_excel("train_generated_captions.xlsx", index=False)
+                if IdeficsForVisionText2Text is not None and isinstance(unwrapped_model, IdeficsForVisionText2Text):
+                    # only for image model
+                    max_num_images = images.shape[1]
+                    image_attention_mask = get_image_attention_mask(input_ids, max_num_images, tokenizer)
+                    assert images.shape[1] == 1, "The second dimension is not 1"
+
+                    loss_mimicit = model(
+                        pixel_values=images.squeeze(1).to(dtype),
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        image_attention_mask=image_attention_mask,
+                        labels=labels,
+                    )[0]
+                else:
+                    loss_mimicit = model(
+                        vision_x=images.to(dtype),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                    )[0]
+
+            if accelerator.mixed_precision == "fp16":
+                accelerator.backward(loss_mimicit.to(device_id))
+            else:
+                accelerator.backward(loss_mimicit)
+
+            total_losses.append(loss_mimicit)
+        #### BACKWARD PASS ####
+        total_loss_sum = sum(total_losses)
+        mean_loss = total_loss_sum / len(total_losses)
+        # accelerator.backward(total_loss_sum.to(device_id))
+
+        def mask_embedding(m):
+            if m.weight.requires_grad:
+                zero_mask = torch.zeros_like(m.weight.grad)
+                zero_mask[answer_token_id] = torch.ones_like(zero_mask[answer_token_id])
+                # zero_mask[media_token_id] = torch.ones_like(zero_mask[media_token_id])
+                # zero_mask[endofchunk_token_id] = torch.ones_like(zero_mask[endofchunk_token_id])
+                m.weight.grad = m.weight.grad * zero_mask
+
+        if args.mask_lm_head and args.distributed_type != "DEEPSPEED":
+            unwrapped_model = accelerator.unwrap_model(model)
+            if isinstance(unwrapped_model, IdeficsForVisionText2Text):
+                # This code need to be refined.
+                unwrapped_model.lm_head.apply(mask_embedding)
+            elif unwrapped_model.lang_encoder.__class__.__name__ in ["MPTForCausalLM", "MosaicGPT"]:
+                unwrapped_model.lang_encoder.transformer.wte.apply(mask_embedding)
+            elif "LlamaForCausalLM" in unwrapped_model.lang_encoder.__class__.__name__:
+                unwrapped_model.lang_encoder.model.embed_tokens.apply(mask_embedding)
+                unwrapped_model.lang_encoder.lm_head.apply(mask_embedding)
+
+        if accelerator.sync_gradients:
+            accelerator.clip_grad_norm_(model.parameters(), 1.0)
+
+        optimizer.step()
+        lr_scheduler.step()
+        optimizer.zero_grad()
+
+        # step time and reset end outside of rank 0
+        step_time_m.update(time.time() - end)
+        end = time.time()
+
+        if accelerator.sync_gradients:
+            if args.rank == 0 and args.report_to_wandb:
+                # compute within rank 0
+                mimicit_samples_per_second = args.gradient_accumulation_steps * args.batch_size * args.world_size / step_time_m.val
+                mimicit_samples_per_second_per_gpu = args.gradient_accumulation_steps * args.batch_size / step_time_m.val
+
+                wandb.log(
+                    {
+                        "data_time": data_time_m.avg,
+                        "step_time": step_time_m.avg,
+                        "mimicit_samples_per_second": mimicit_samples_per_second,
+                        "mimicit_samples_per_second_per_gpu": mimicit_samples_per_second_per_gpu,
+                        "lr": optimizer.param_groups[0]["lr"],
+                    },
+                    commit=False,
+                )
+                step_time_m.reset()
+                data_time_m.reset()
+
+                wandb.log(
+                    {
+                        "loss_mimicit": mean_loss.item(),
+                        "global_step": global_step // args.gradient_accumulation_steps,
+                    },
+                    commit=True,
+                )
+                # torch.cuda.empty_cache()
+                # gc.collect()  # forces garbage collection
+
+            if args.rank == 0 and global_step != 0 and (args.save_steps_interval != -1) and (global_step % args.save_steps_interval == 0):
+                if not os.path.exists(args.external_save_dir):
+                    os.makedirs(args.external_save_dir)
+
+                unwrapped_model = accelerator.unwrap_model(model)
+                checkpoint_dict = {
+                    "steps": global_step,
+                    "model_state_dict": get_checkpoint(unwrapped_model),
+                }
+                print(f"Saving checkpoint to {args.external_save_dir}/checkpoint_steps_{global_step}.pt")
+                accelerator.save(checkpoint_dict, f"{args.external_save_dir}/checkpoint_steps_{global_step}.pt")
+                if args.delete_previous_checkpoint:
+                    if epoch > 0 and os.path.exists(f"{args.external_save_dir}/checkpoint_step_{global_step-args.save_steps_interval}.pt"):
+                        os.remove(f"{args.external_save_dir}/checkpoint_step_{global_step-args.save_steps_interval}.pt")
+
+        # Log loss to console
+        if ((num_steps + 1) % args.logging_steps == 0) and args.rank == 0:
+            print(f"Step {num_steps+1}/{num_batches_per_epoch} of epoch {epoch+1}/{args.num_epochs} complete. Loss MIMIC-IT: {mean_loss.item():.3f}")
 
 
 def parse_args():
@@ -229,19 +288,6 @@ def parse_args():
         type=str,
         default="",
         help="Path to the past image-text dataset (including multi-run conversations). Should be in format /path/to/xx_instruction.json",
-    )
-    
-    parser.add_argument(
-        "--eval_instruction_path",
-        type=str,
-        default="",
-        help="Path to the evaluation instruction file. Should be in format /path/to/eval_instruction.json",
-    )
-    parser.add_argument(
-        "--eval_path",
-        type=str,
-        default="",
-        help="Path to the evaluation file. Should be in format /path/to/eval.json",
     )
     parser.add_argument(
         "--past_images_path",
@@ -294,7 +340,6 @@ def parse_args():
         default="",
         help="Path to the past in-context training config dataset. Should be in format /path/to/xx_train.json",
     )
-    
     parser.add_argument(
         "--mimicit_ic_path",
         type=str,
@@ -499,6 +544,7 @@ def main():
         accelerator.state.deepspeed_plugin.deepspeed_config["train_micro_batch_size_per_gpu"] = args.batch_size
 
     device_id = accelerator.device
+
     if args.pretrained_model_name_or_path is not None:
         accelerator.print(f"Loading pretrained model from {args.pretrained_model_name_or_path}")
         device_map = {"": device_id} if accelerator.distributed_type == "MULTI_GPU" or accelerator.distributed_type == "DEEPSPEED" else "auto"
@@ -511,6 +557,53 @@ def main():
             args.tokenizer = model.text_tokenizer
             tokenizer = model.text_tokenizer
             image_processor = CLIPImageProcessor()
+        elif "flamingo" in args.model_name.lower():
+            model = FlamingoForConditionalGeneration.from_pretrained(
+                args.pretrained_model_name_or_path,
+                device_map=device_map,
+                local_files_only=args.offline,
+            )
+            # add special tokens for instruction tuning
+            model.text_tokenizer.add_special_tokens({"additional_special_tokens": ["<answer>"]})
+            args.tokenizer = model.text_tokenizer
+            tokenizer = model.text_tokenizer
+            image_processor = CLIPImageProcessor()
+        elif "idefics" in args.model_name.lower():
+            from transformers import IdeficsForVisionText2Text
+
+            # you need to install the idefics version transformers package first
+            kwargs = {"local_files_only": args.offline, "device_map": device_map}
+            if accelerator.distributed_type == "DEEPSPEED" and accelerator.state.deepspeed_plugin.zero_stage == 3:
+                kwargs.pop("device_map")
+
+            model = IdeficsForVisionText2Text.from_pretrained(
+                args.pretrained_model_name_or_path,
+                **kwargs,
+            )
+
+            if args.gradient_checkpointing:
+                model.gradient_checkpointing_enable()
+
+            # named_parameters = dict(model.named_parameters())
+            # params_to_gather = [named_parameters[k] for k in named_parameters.keys()]
+            # if len(params_to_gather) > 0:
+            if accelerator.distributed_type == "DEEPSPEED" and accelerator.state.deepspeed_plugin.zero_stage == 3:
+                params_to_gather = [p for name, p in model.named_parameters() if p.requires_grad]
+                with deepspeed.zero.GatheredParameters(params_to_gather, modifier_rank=0):
+                    if torch.distributed.get_rank() == 0:
+                        # 有参数
+                        print(device_id, f"IDEFICS Trainable Params: {(sum(p.numel() for p in model.parameters() if p.requires_grad)) / 1e9:.3f} B")
+                del params_to_gather
+
+            print(device_id, f"IDEFICS Trainable Params: {(sum(p.numel() for p in model.parameters() if p.requires_grad)) / 1e9:.3f} B")
+            # import pdb;pdb.set_trace()
+            processor = AutoProcessor.from_pretrained(args.pretrained_model_name_or_path, legacy=False)
+            past_special_tokens = processor.tokenizer.special_tokens_map["additional_special_tokens"]
+            processor.tokenizer.add_special_tokens({"additional_special_tokens": ["<answer>", "<|endofchunk|>"] + past_special_tokens})
+            image_processor = processor.image_processor
+            tokenizer = processor.tokenizer
+            # For idefics model, do not resize token
+            # model.resize_token_embeddings(len(tokenizer))
     else:
         config = FlamingoConfig.from_json_file("./flamingo/config.json")
         model = FlamingoForConditionalGeneration(config=config)
@@ -623,13 +716,12 @@ def main():
     else:
         model, optimizer, lr_scheduler, mimicit_loaders = accelerator.prepare(model, optimizer, lr_scheduler, mimicit_loaders)
 
-    # model.train()
+    model.train()
 
     for epoch in range(resume_from_epoch, args.num_epochs):
         for cur_data_loader in mimicit_loaders:
             cur_data_loader.dataset.set_epoch(epoch)
 
-        
         train_one_epoch(
             args=args,
             model=model,
@@ -642,8 +734,6 @@ def main():
             device_id=device_id,
             wandb=wandb,
         )
-        
-        
         accelerator.wait_for_everyone()
 
         if args.save_ckpt_each_epoch:
@@ -735,38 +825,6 @@ def main():
 
     accelerator.wait_for_everyone()
 
-
-
-# def main_eval():
-#     args = parse_args()
-#     accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)
-#     if accelerator.state.deepspeed_plugin is not None:
-#         accelerator.state.deepspeed_plugin.deepspeed_config["train_micro_batch_size_per_gpu"] = args.batch_size
-
-#     device_id = accelerator.device
-
-#     if args.pretrained_model_name_or_path is not None:
-#         accelerator.print(f"Loading pretrained model from {args.pretrained_model_name_or_path}")
-#         device_map = {"": device_id} if accelerator.distributed_type == "MULTI_GPU" or accelerator.distributed_type == "DEEPSPEED" else "auto"
-#         if "otter" in args.model_name.lower():
-#             model = OtterForConditionalGeneration.from_pretrained(
-#                 args.pretrained_model_name_or_path,
-#                 device_map=device_map,
-#                 local_files_only=args.offline,
-#             )
-#             args.tokenizer = model.text_tokenizer
-#             tokenizer = model.text_tokenizer
-#             image_processor = CLIPImageProcessor()
-
-#     # eval_loader = prepare_eval_dataset(args.eval_path, args.eval_instruction_path, tokenizer, args.images_path)
-#     eval_loader = get_data(args, image_processor, tokenizer, "mimicit")
-#     # model = ...  # Load your model with the pretrained checkpoint
-#     # model.to(device_id)
-#     generated_captions = evaluate(model, eval_loader, tokenizer, device_id, accelerator)
-
-#     # 4. Save the generated captions to an Excel file
-#     df = pd.DataFrame(generated_captions, columns=["Generated Caption"])
-#     df.to_excel("generated_captions.xlsx", index=False)
 
 if __name__ == "__main__":
     main()
