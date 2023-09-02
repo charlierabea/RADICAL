@@ -9,7 +9,7 @@ export PYTHONPATH="/home/chengyili/project/CT-CLIP/Otter_original:$PYTHONPATH"
 
 CUDA_VISIBLE_DEVICES=0,1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
 pipeline/train/0830_eval.py \
---pretrained_model_name_or_path="/home/chengyili/project/CT-CLIP/Otter/checkpoints/OTTER-LLaMA7B-MED_CLIP_hf/" \
+--pretrained_model_name_or_path="   checkpoints/OTTER-LLaMA7B-MED_CLIP_hf/" \
 --mimicit_path="/local2/chengyili/data/output/MED_instruction.json" \
 --images_path="/local2/chengyili/data/output/MED.json" \
 --batch_size=1 \
