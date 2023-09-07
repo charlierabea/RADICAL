@@ -4,7 +4,7 @@ import re
 from tqdm import tqdm
 
 # Load the JSON file
-with open('/local2/chengyili/data/output/eval.json', 'r') as file:
+with open('/Volumes/My_Passport/otter/training_data/eval.json', 'r') as file:
     data = json.load(file)
 
 # Extract all top-level keys from the JSON data

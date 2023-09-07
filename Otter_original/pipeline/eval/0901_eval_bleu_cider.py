@@ -71,11 +71,11 @@ annotations_path = 'temp_annotations.json'
 results_path = 'temp_results.json'
 
 # Load data
-excel_file_path = '/home/chengyili/project/CT-CLIP/Otter_original/0901_eval_generated_captions.xlsx'
+excel_file_path = '/Users/charliethebear/Documents/Lab/2023_summer/excel/0904_train_generated_captions.xlsx'
 data = load_data_from_excel(excel_file_path)
 
 # Evaluate
 data = evaluate(data, annotations_path, results_path)
 
 # Save updated data to Excel
-save_data_to_excel(data, '/home/chengyili/project/CT-CLIP/Otter_original/0901_eval_generated_captions_scores.xlsx')
+save_data_to_excel(data, '/Users/charliethebear/Documents/Lab/2023_summer/excel/0904_train_generated_captions_scores.xlsx')
