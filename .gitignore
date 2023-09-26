@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info
 dist/
 build/
+*.bin
 
 # C++ object and library files
 *.o

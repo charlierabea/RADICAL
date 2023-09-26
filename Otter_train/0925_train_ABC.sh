@@ -10,8 +10,8 @@ pipeline/train/instruction_following.py \
 --num_epochs=9 \
 --report_to_wandb \
 --wandb_entity=big_data_center \
---run_name=0919_MED_CLIP_ABC \
---wandb_project=0919_MED_CLIP_ABC \
+--run_name=0925_OTTER_CLIP_ABC \
+--wandb_project=0925_OTTER_CLIP_ABC \
 --workers=1 \
 --lr_scheduler=cosine \
 --learning_rate=1e-5 \

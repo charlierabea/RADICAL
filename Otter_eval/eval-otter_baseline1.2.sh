@@ -8,9 +8,9 @@ export PYTHONPATH="/home/chengyili/project/CT-CLIP/Otter_original:$PYTHONPATH"
 # --batch_size=1 \
 
 CUDA_VISIBLE_DEVICES=1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
-pipeline/train/0922_eval_ABC.py \
---pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/0925_OTTER_CLIP_ABC_hf/" \
---mimicit_path="/raid/jupyter-alz.ee09/data/0919_eval_instruction2_ABC.json" \
+pipeline/train/0927_eval_baseline_temp1.2.py  \
+--pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/0924_OTTER_CLIP_baseline_hf/" \
+--mimicit_path="/raid/jupyter-alz.ee09/data/0916_eval_instruction2_baseline.json" \
 --images_path="/raid/jupyter-alz.ee09/data/eval.json" \
 --batch_size=1 \
 --warmup_steps_ratio=0.01 \

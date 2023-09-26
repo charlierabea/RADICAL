@@ -169,7 +169,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     vision_x=images.to(dtype),
                     lang_x=lang_x_input_ids,
                     attention_mask=lang_x_attention_mask,
-                    max_new_tokens = 256,
+                    max_new_tokens = 512,
                 ) 
                 # print(generated_text)
                 
@@ -203,7 +203,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
     # print(generated_captions)
     df_data = [(key, val[0], val[1]) for key, val in generated_captions.items()]
     df = pd.DataFrame(df_data, columns=['id', 'gt', 'parsed_output'])
-    df.to_excel("/raid/jupyter-alz.ee09/Excel/0923otter_baseline2_generated_captions.xlsx", index=False)
+    df.to_excel("/raid/jupyter-alz.ee09/Excel/0925otter_baseline512_generated_captions.xlsx", index=False)
 
 
 def parse_args():
@@ -445,13 +445,13 @@ def parse_args():
     parser.add_argument(
         "--max-src-length",
         type=int,
-        default=256,
+        default=512,
         help="the maximum src sequence length",
     )
     parser.add_argument(
         "--max-tgt-length",
         type=int,
-        default=256,
+        default=512,
         help="the maximum target sequence length",
     )
     parser.add_argument("--patch-image-size", type=int, default=224)
