@@ -8,8 +8,8 @@ export PYTHONPATH="/home/chengyili/project/CT-CLIP/Otter_original:$PYTHONPATH"
 # --batch_size=1 \
 
 CUDA_VISIBLE_DEVICES=1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
-pipeline/train/0922_eval_fewshot.py \
---pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/OTTER-MPT7B-Init/" \
+pipeline/train/final_eval_fewshot.py \
+--pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/0917_OTTER_CLIP_fewshot_hf/" \
 --mimicit_path="/raid/jupyter-alz.ee09/data/0917_eval_instruction2_fewshot.json" \
 --images_path="/raid/jupyter-alz.ee09/data/eval.json" \
 --batch_size=1 \

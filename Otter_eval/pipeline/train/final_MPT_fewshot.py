@@ -87,30 +87,9 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
         data_time_m.update(time.time() - end)
         global_step = num_steps + epoch * num_batches_per_epoch
         #### MIMIC-IT FORWARD PASS ####
-#         def to_serializable(item):
-#             if isinstance(item, torch.Tensor):
-#                 return item.cpu().numpy().tolist()
-#             elif isinstance(item, np.ndarray):
-#                 return item.tolist()
-#             elif isinstance(item, dict):
-#                 return {k: to_serializable(v) for k, v in item.items()}
-#             elif isinstance(item, list):
-#                 return [to_serializable(i) for i in item]
-#             return item
-        
+
         for batch_mimicit in batch_mimicits:
             print(batch_mimicit["id"][0])
-#             if batch_mimicit["id"][0] != "eval_INS_18827":
-#                 continue
-            
-#             # Convert tensors, numpy arrays, and nested items to lists
-#             serialized_batch = to_serializable(batch_mimicit)
-
-#             # Save to JSON file
-#             filename = f'batch_{batch_mimicit["id"][0]}.json'
-#             with open(filename, 'w') as f:
-#                 json.dump(serialized_batch, f)
-                
             images = batch_mimicit["net_input"]["patch_images"].to(device_id, non_blocking=True)
             input_ids = batch_mimicit["net_input"]["input_ids"].to(device_id, non_blocking=True)
             attention_mask = batch_mimicit["net_input"]["attention_masks"].to(device_id, non_blocking=True)
@@ -156,7 +135,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     return f"<image>User: {prompt} GPT:<answer>"
                 lang_x = model.text_tokenizer(
                     [
-                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is 24. \n Please generate medical descriptions based on the images in a consistent style.\n\n"),
+                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is 24. \n Please generate medical descriptions based on the images in a consistent style.\n\n\n<Impression: arteriosclerotic encephalopathy>\nFindings\n> low density change in the periventricular white matter, most likely as subcortical arteriosclerotic encephalopathy > no intracranial hemorrhage.\n> normal appearance of insular cortex and no definite effacement of cerebral cortex.\nno ct evidence of acute infarction of brain.\n> no ventricular dilatation nor midline shift.\n> no space-occupying lesion in the brain parenchyma.\n> bilateral paranasal sinuses and mastoid air cells are well pneumatized.\n> skull bones appear intact without space-occupying lesion.\nConclusion\n1. low density change in the periventricular white matter, most likely as subcortical arteriosclerotic encephalopathy \n2.no ct evidence of acute infarction of brain.\n\n<Impression: lacunar infarcts>\nFindings\n> low density change in the periventricular white matter, most likely as subcortical arteriosclerotic encephalopathy > a few hypodense lesions at bilateral basal ganglia, more in favor of old lacunar infarcts.\n> no intracranial hemorrhage.\n> no ventricular dilatation nor midline shift.\n> no space-occupying lesion in the brain parenchyma.\n> bilateral paranasal sinuses and mastoid air cells are well pneumatized.\n> skull bones appear intact without space-occupying lesion.\nconclusion\nseveral old lacunar infarcts; mild white matter change.\n\n<Impression: SDH(subdural hepatoma/midshift)>\nFindings:\n> sdh noted at left cerebral convexity, right frontal base, along tentorium cerebelli and cerebral falx, up to 2.0cm.\n> mass effect with midline shift to right side, about 1cm, and compression of left lateral ventricle, slightly in regression as compared with previous study.\n> no left side uncal hernation.\n> bilateral paranasal sinuses and mastoid air cells are well pneumatized.\n> skull bones appear intact without space-occupying lesion.\nConclusion\n> sdh noted at left cerebral convexity, right frontal base, along tentorium cerebelli and cerebral falx, up to 2.0cm.\n> mass effect with midline shift to right side, about 1cm, and compression of left lateral ventricle, in regressive change.\n"),
                     ],
                     return_tensors="pt",
                 )
@@ -170,8 +149,6 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     lang_x=lang_x_input_ids,
                     attention_mask=lang_x_attention_mask,
                     max_new_tokens = 512,
-                    do_sample=True,
-                    temperature=1.2
                 ) 
                 # print(generated_text)
                 
@@ -198,14 +175,14 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     .rstrip('"')
                 )
                 # print(batch_mimicit.keys())
-                print("/",parsed_output,"/")
+                # print(gt)
                 generated_captions[batch_mimicit["id"][0]] = (gt, parsed_output)
-#                 print(generated_captions.keys())
+                # print(generated_captions.keys())
 
     # print(generated_captions)
     df_data = [(key, val[0], val[1]) for key, val in generated_captions.items()]
     df = pd.DataFrame(df_data, columns=['id', 'gt', 'parsed_output'])
-    df.to_excel("/raid/jupyter-alz.ee09/Excel/0927eval_baseline1.2_generated_captions.xlsx", index=False)
+    df.to_excel("/raid/jupyter-alz.ee09/Excel/finalMPT_fewshot512_generated_captions.xlsx", index=False)
 
 
 def parse_args():
@@ -447,13 +424,13 @@ def parse_args():
     parser.add_argument(
         "--max-src-length",
         type=int,
-        default=512,
+        default=256,
         help="the maximum src sequence length",
     )
     parser.add_argument(
         "--max-tgt-length",
         type=int,
-        default=512,
+        default=256,
         help="the maximum target sequence length",
     )
     parser.add_argument("--patch-image-size", type=int, default=224)
@@ -527,7 +504,6 @@ def main():
         accelerator.print(f"Loading pretrained model from {args.pretrained_model_name_or_path}")
         device_map = {"": device_id} if accelerator.distributed_type == "MULTI_GPU" or accelerator.distributed_type == "DEEPSPEED" else "auto"
         if "otter" in args.model_name.lower():
-            print("otter")
             model = OtterForConditionalGeneration.from_pretrained(
                 args.pretrained_model_name_or_path,
                 device_map=device_map,
@@ -537,7 +513,6 @@ def main():
             tokenizer = model.text_tokenizer
             image_processor = CLIPImageProcessor()
     else:
-        print("flamingo:(")
         config = FlamingoConfig.from_json_file("./flamingo/config.json")
         model = FlamingoForConditionalGeneration(config=config)
 
@@ -571,12 +546,12 @@ def main():
     random_seed(args.seed, args.rank)
 
     print(f"Start running training on rank {args.rank}.")
-    print(model)
+
     # device_id = args.rank % torch.cuda.device_count()
 
     mimicit_loaders = get_data(args, image_processor, tokenizer, "mimicit")
     
-    def check_entry_in_datasets(mimicit_loaders, target_entry="MED_INS_00001"):
+    def check_entry_in_datasets(mimicit_loaders, target_entry="eval_ins_18878"):
         count = 0
         for dataloader in mimicit_loaders:
             for batch in dataloader:
@@ -588,7 +563,7 @@ def main():
 
     # Use the function:
     count = check_entry_in_datasets(mimicit_loaders)
-    print(f"'MED_INS_00001' appears {count} times in the datasets.")
+    print(f"'eval_ins_18878' appears {count} times in the datasets.")
 
     def get_grouped_params(model):
         params_with_wd, params_without_wd = [], []

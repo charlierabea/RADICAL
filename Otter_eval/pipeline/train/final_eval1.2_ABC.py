@@ -90,6 +90,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
 
         for batch_mimicit in batch_mimicits:
             print(batch_mimicit["id"][0])
+            
             images = batch_mimicit["net_input"]["patch_images"].to(device_id, non_blocking=True)
             input_ids = batch_mimicit["net_input"]["input_ids"].to(device_id, non_blocking=True)
             attention_mask = batch_mimicit["net_input"]["attention_masks"].to(device_id, non_blocking=True)
@@ -135,7 +136,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     return f"<image>User: {prompt} GPT:<answer>"
                 lang_x = model.text_tokenizer(
                     [
-                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is 24. \n Please generate medical descriptions based on the images in a consistent style.\n\n\n<Impression: arteriosclerotic encephalopathy>\nFindings\n> low density change in the periventricular white matter, most likely as subcortical arteriosclerotic encephalopathy > no intracranial hemorrhage.\n> normal appearance of insular cortex and no definite effacement of cerebral cortex.\nno ct evidence of acute infarction of brain.\n> no ventricular dilatation nor midline shift.\n> no space-occupying lesion in the brain parenchyma.\n> bilateral paranasal sinuses and mastoid air cells are well pneumatized.\n> skull bones appear intact without space-occupying lesion.\nConclusion\n1. low density change in the periventricular white matter, most likely as subcortical arteriosclerotic encephalopathy \n2.no ct evidence of acute infarction of brain.\n\n<Impression: lacunar infarcts>\nFindings\n> low density change in the periventricular white matter, most likely as subcortical arteriosclerotic encephalopathy > a few hypodense lesions at bilateral basal ganglia, more in favor of old lacunar infarcts.\n> no intracranial hemorrhage.\n> no ventricular dilatation nor midline shift.\n> no space-occupying lesion in the brain parenchyma.\n> bilateral paranasal sinuses and mastoid air cells are well pneumatized.\n> skull bones appear intact without space-occupying lesion.\nconclusion\nseveral old lacunar infarcts; mild white matter change.\n\n<Impression: SDH(subdural hepatoma/midshift)>\nFindings:\n> sdh noted at left cerebral convexity, right frontal base, along tentorium cerebelli and cerebral falx, up to 2.0cm.\n> mass effect with midline shift to right side, about 1cm, and compression of left lateral ventricle, slightly in regression as compared with previous study.\n> no left side uncal hernation.\n> bilateral paranasal sinuses and mastoid air cells are well pneumatized.\n> skull bones appear intact without space-occupying lesion.\nConclusion\n> sdh noted at left cerebral convexity, right frontal base, along tentorium cerebelli and cerebral falx, up to 2.0cm.\n> mass effect with midline shift to right side, about 1cm, and compression of left lateral ventricle, in regressive change.\n"),
+                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is 24. \n\n  Please generate medical descriptions based on the images in a consistent style.\n\nUse the following guidelines:\n- Degree: Indicate the intensity or state (e.g., normal, mild, chronic, old, etc).\n- Landmark: Specify the area of interest (e.g., intracerebral, midline, parenchyma, sulci, etc).\n- Feature: Describe any observed abnormalities (e.g., hemorrhage, atrophy, infarcts, etc).\n- Impression: Conclude with a clinical impression (e.g., arteriosclerotic encephalopathy, intracerebral hemorrhage, dementia, etc).\n\nEnsure consistency and clarity in the report.\n\n"),
                     ],
                     return_tensors="pt",
                 )
@@ -148,9 +149,11 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     vision_x=images.to(dtype),
                     lang_x=lang_x_input_ids,
                     attention_mask=lang_x_attention_mask,
-                    max_new_tokens = 256,
+                    max_new_tokens = 512,
+                    do_sample=True,
+                    temperature=1.2
                 ) 
-                # print(generated_text)
+#                 print(generated_text)
                 
                 parsed_output = (
                     model.text_tokenizer.decode(generated_text[0])
@@ -175,14 +178,14 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     .rstrip('"')
                 )
                 # print(batch_mimicit.keys())
-                # print(gt)
+#                 print("/",parsed_output,"/")
                 generated_captions[batch_mimicit["id"][0]] = (gt, parsed_output)
                 # print(generated_captions.keys())
 
     # print(generated_captions)
     df_data = [(key, val[0], val[1]) for key, val in generated_captions.items()]
     df = pd.DataFrame(df_data, columns=['id', 'gt', 'parsed_output'])
-    df.to_excel("/raid/jupyter-alz.ee09/Excel/0922MPT_fewshot_generated_captions.xlsx", index=False)
+    df.to_excel("/raid/jupyter-alz.ee09/Excel/finaleval_ABC1.2_generated_captions.xlsx", index=False)
 
 
 def parse_args():
@@ -424,13 +427,13 @@ def parse_args():
     parser.add_argument(
         "--max-src-length",
         type=int,
-        default=256,
+        default=512,
         help="the maximum src sequence length",
     )
     parser.add_argument(
         "--max-tgt-length",
         type=int,
-        default=256,
+        default=512,
         help="the maximum target sequence length",
     )
     parser.add_argument("--patch-image-size", type=int, default=224)

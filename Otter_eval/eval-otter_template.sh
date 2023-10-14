@@ -7,10 +7,10 @@ export PYTHONPATH="/home/chengyili/project/CT-CLIP/Otter_original:$PYTHONPATH"
 # --eval_instruction_path="/local2/chengyili/data/output/eval_instruction.json" \
 # --batch_size=1 \
 
-CUDA_VISIBLE_DEVICES=1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
-pipeline/train/0917_eval_fewshot.py \
---pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/0921_MED_CLIP_fewshot3_hf/" \
---mimicit_path="/raid/jupyter-alz.ee09/data/0917_eval_instruction2_fewshot.json" \
+CUDA_VISIBLE_DEVICES=0 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
+pipeline/train/final_eval_template.py \
+--pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/0918_OTTER_CLIP_template_hf/" \
+--mimicit_path="/raid/jupyter-alz.ee09/data/0918_eval_instruction2_template.json" \
 --images_path="/raid/jupyter-alz.ee09/data/eval.json" \
 --batch_size=1 \
 --warmup_steps_ratio=0.01 \

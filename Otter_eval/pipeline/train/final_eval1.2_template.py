@@ -87,30 +87,9 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
         data_time_m.update(time.time() - end)
         global_step = num_steps + epoch * num_batches_per_epoch
         #### MIMIC-IT FORWARD PASS ####
-#         def to_serializable(item):
-#             if isinstance(item, torch.Tensor):
-#                 return item.cpu().numpy().tolist()
-#             elif isinstance(item, np.ndarray):
-#                 return item.tolist()
-#             elif isinstance(item, dict):
-#                 return {k: to_serializable(v) for k, v in item.items()}
-#             elif isinstance(item, list):
-#                 return [to_serializable(i) for i in item]
-#             return item
-        
+
         for batch_mimicit in batch_mimicits:
             print(batch_mimicit["id"][0])
-#             if batch_mimicit["id"][0] != "eval_INS_18827":
-#                 continue
-            
-#             # Convert tensors, numpy arrays, and nested items to lists
-#             serialized_batch = to_serializable(batch_mimicit)
-
-#             # Save to JSON file
-#             filename = f'batch_{batch_mimicit["id"][0]}.json'
-#             with open(filename, 'w') as f:
-#                 json.dump(serialized_batch, f)
-                
             images = batch_mimicit["net_input"]["patch_images"].to(device_id, non_blocking=True)
             input_ids = batch_mimicit["net_input"]["input_ids"].to(device_id, non_blocking=True)
             attention_mask = batch_mimicit["net_input"]["attention_masks"].to(device_id, non_blocking=True)
@@ -156,7 +135,7 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     return f"<image>User: {prompt} GPT:<answer>"
                 lang_x = model.text_tokenizer(
                     [
-                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is 24. \n Please generate medical descriptions based on the images in a consistent style.\n\n"),
+                        get_formatted_prompt("You are an AI assistant specialized in radiology topics. \n\n You are provided with brain CT slices from a single study. The number of slices is 24. \n Please generate medical descriptions based on the images in a consistent style.\n\n\n\n<Style template>\nFindings:\n> <is there a midline shift or hemorrhage(intracranial hepatoma/epidural hepatoma/subdural hepatoma)?>\n> <is there a change in ventricular and sulci system?>\n> <Is there a white matter lesion?(lacunar infarction/cortical infarction/subcortical infarction)>\n> <Is the brain parenchyma healthy?(tissue loss(atrophy)/tissue swelling)>\n> <Is there abnormality in high density area?(meningioma/fracture/calcified plaque/arachnoid cyst)>\n> <(Use your domain knowledge)Is there any other abnormality?(herniation/arteriosclerotic encephalopathy/encephalomalacia/wall calcification of cavernous ICA/Air-fluid level)>\nConclusion:\n1. <summarizing important finding 1>\n2. <summarizing important finding 2>\n"),
                     ],
                     return_tensors="pt",
                 )
@@ -170,6 +149,8 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     lang_x=lang_x_input_ids,
                     attention_mask=lang_x_attention_mask,
                     max_new_tokens = 512,
+                    do_sample=True,
+                    temperature=1.2
                 ) 
                 # print(generated_text)
                 
@@ -196,14 +177,13 @@ def train_one_epoch(args, model, epoch, mimicit_loaders, tokenizer, optimizer, l
                     .rstrip('"')
                 )
                 # print(batch_mimicit.keys())
-                print("/",parsed_output,"/")
                 generated_captions[batch_mimicit["id"][0]] = (gt, parsed_output)
 #                 print(generated_captions.keys())
 
     # print(generated_captions)
     df_data = [(key, val[0], val[1]) for key, val in generated_captions.items()]
     df = pd.DataFrame(df_data, columns=['id', 'gt', 'parsed_output'])
-    df.to_excel("/raid/jupyter-alz.ee09/Excel/0925otter_baseline512_generated_captions.xlsx", index=False)
+    df.to_excel("/raid/jupyter-alz.ee09/Excel/finaleval_template1.2_generated_captions.xlsx", index=False)
 
 
 def parse_args():
@@ -445,13 +425,13 @@ def parse_args():
     parser.add_argument(
         "--max-src-length",
         type=int,
-        default=512,
+        default=256,
         help="the maximum src sequence length",
     )
     parser.add_argument(
         "--max-tgt-length",
         type=int,
-        default=512,
+        default=256,
         help="the maximum target sequence length",
     )
     parser.add_argument("--patch-image-size", type=int, default=224)
@@ -525,7 +505,6 @@ def main():
         accelerator.print(f"Loading pretrained model from {args.pretrained_model_name_or_path}")
         device_map = {"": device_id} if accelerator.distributed_type == "MULTI_GPU" or accelerator.distributed_type == "DEEPSPEED" else "auto"
         if "otter" in args.model_name.lower():
-            print("otter")
             model = OtterForConditionalGeneration.from_pretrained(
                 args.pretrained_model_name_or_path,
                 device_map=device_map,
@@ -535,7 +514,6 @@ def main():
             tokenizer = model.text_tokenizer
             image_processor = CLIPImageProcessor()
     else:
-        print("flamingo:(")
         config = FlamingoConfig.from_json_file("./flamingo/config.json")
         model = FlamingoForConditionalGeneration(config=config)
 
@@ -569,12 +547,12 @@ def main():
     random_seed(args.seed, args.rank)
 
     print(f"Start running training on rank {args.rank}.")
-    print(model)
+
     # device_id = args.rank % torch.cuda.device_count()
 
     mimicit_loaders = get_data(args, image_processor, tokenizer, "mimicit")
     
-    def check_entry_in_datasets(mimicit_loaders, target_entry="MED_INS_00001"):
+    def check_entry_in_datasets(mimicit_loaders, target_entry="eval_ins_18878"):
         count = 0
         for dataloader in mimicit_loaders:
             for batch in dataloader:
@@ -586,7 +564,7 @@ def main():
 
     # Use the function:
     count = check_entry_in_datasets(mimicit_loaders)
-    print(f"'MED_INS_00001' appears {count} times in the datasets.")
+    print(f"'eval_ins_18878' appears {count} times in the datasets.")
 
     def get_grouped_params(model):
         params_with_wd, params_without_wd = [], []

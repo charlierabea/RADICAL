@@ -7,9 +7,9 @@ export PYTHONPATH="/home/chengyili/project/CT-CLIP/Otter_original:$PYTHONPATH"
 # --eval_instruction_path="/local2/chengyili/data/output/eval_instruction.json" \
 # --batch_size=1 \
 
-CUDA_VISIBLE_DEVICES=1 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
-pipeline/train/0919_eval_ABC.py \
---pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/0920_MED_CLIP_ABC3_hf/" \
+CUDA_VISIBLE_DEVICES=0 accelerate launch --config_file=./pipeline/accelerate_configs/accelerate_config_fsdp.yaml \
+pipeline/train/final_MPT_ABC.py \
+--pretrained_model_name_or_path="/raid/jupyter-alz.ee09/Otter_checkpoints/OTTER-Image-MPT7B/" \
 --mimicit_path="/raid/jupyter-alz.ee09/data/0919_eval_instruction2_ABC.json" \
 --images_path="/raid/jupyter-alz.ee09/data/eval.json" \
 --batch_size=1 \
