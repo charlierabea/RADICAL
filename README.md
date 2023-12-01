@@ -1,4 +1,4 @@
-# CT-CLIP
+# RADICAL
 
 > this repository is modified from https://github.com/Luodian/Otter
 
